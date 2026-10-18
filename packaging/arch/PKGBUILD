@@ -9,6 +9,7 @@ url="https://github.com/kud3n013/dbusmenu-shortcut-shim"
 license=('MIT')
 depends=('glib2')
 makedepends=('gcc' 'make' 'pkgconf')
+options=(!debug)
 checkdepends=('libdbusmenu-glib' 'libdbusmenu-gtk3' 'gtk3')
 source=("${pkgname}-${pkgver}.tar.gz")
 sha256sums=('SKIP') # local tarball produced by CI with git archive

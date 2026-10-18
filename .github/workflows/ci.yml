@@ -51,6 +51,7 @@ jobs:
           printf '%s\n' dbusmenu_menuitem_property_set_shortcut dbusmenu_menuitem_property_set_variant dlsym | sort | diff - exported.txt
       - name: ShellCheck
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           files=$(git ls-files '*.sh')
           if [ -n "$files" ]; then shellcheck $files; else echo "no shell scripts"; fi
 
