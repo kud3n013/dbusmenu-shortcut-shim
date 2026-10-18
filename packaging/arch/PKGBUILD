@@ -1,0 +1,29 @@
+# Maintainer: kud3n013 <kud3n.013@proton.me>
+# Reference PKGBUILD used by CI. The archrepo recipe downloads the release asset instead.
+pkgname=dbusmenu-shortcut-shim
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="LD_PRELOAD shim that fixes punctuation shortcut names in DBusMenu for KDE Plasma's Global Menu"
+arch=('x86_64')
+url="https://github.com/kud3n013/dbusmenu-shortcut-shim"
+license=('MIT')
+depends=('glib2')
+makedepends=('gcc' 'make' 'pkgconf')
+checkdepends=('libdbusmenu-glib' 'libdbusmenu-gtk3' 'gtk3')
+source=("${pkgname}-${pkgver}.tar.gz")
+sha256sums=('SKIP') # local tarball produced by CI with git archive
+
+build() {
+  cd "${pkgname}-${pkgver}"
+  make
+}
+
+check() {
+  cd "${pkgname}-${pkgver}"
+  make test
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+  make DESTDIR="$pkgdir" PREFIX=/usr install
+}

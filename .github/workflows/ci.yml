@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DEPS: base-devel git glib2 libdbusmenu-glib libdbusmenu-gtk3 gtk3 clang pkgconf shellcheck namcap
+
+jobs:
+  build-test:
+    name: build-test (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed $DEPS
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and test
+        run: make CC=${{ matrix.cc }} test
+      - name: Sanitizers (ASan/UBSan)
+        run: make CC=${{ matrix.cc }} sanitize
+
+  lint:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed $DEPS
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compile with -Werror
+        run: |
+          make clean
+          make CFLAGS='-O2 -Werror' all tests/test_keymap tests/test_preload
+      - name: Exported symbols
+        run: |
+          nm -D --defined-only libdbusmenu-shortcut-shim.so | awk '{print $3}' | sort > exported.txt
+          printf '%s\n' dbusmenu_menuitem_property_set_shortcut dbusmenu_menuitem_property_set_variant dlsym | sort | diff - exported.txt
+      - name: ShellCheck
+        run: |
+          files=$(git ls-files '*.sh')
+          if [ -n "$files" ]; then shellcheck $files; else echo "no shell scripts"; fi
+
+  arch-package:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed $DEPS
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Prepare source tarball and build user
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          version=$(sed -n 's/^VERSION := //p' Makefile)
+          git archive --prefix="dbusmenu-shortcut-shim-${version}/" -o "packaging/arch/dbusmenu-shortcut-shim-${version}.tar.gz" HEAD
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE/packaging/arch"
+      - name: makepkg (unprivileged, no sudo)
+        run: su builder -c "cd '$GITHUB_WORKSPACE/packaging/arch' && makepkg --noconfirm" 
+      - name: namcap
+        working-directory: packaging/arch
+        run: |
+          namcap PKGBUILD
+          namcap ./*.pkg.tar.zst
+      - name: Verify package contents
+        working-directory: packaging/arch
+        run: |
+          tar --zstd -tf ./*.pkg.tar.zst > contents.txt
+          cat contents.txt
+          grep -qx 'usr/lib/dbusmenu-shortcut-shim/libdbusmenu-shortcut-shim.so' contents.txt
+          grep -qx 'usr/share/licenses/dbusmenu-shortcut-shim/LICENSE' contents.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: arch-package
+          path: packaging/arch/*.pkg.tar.zst
+          if-no-files-found: error
